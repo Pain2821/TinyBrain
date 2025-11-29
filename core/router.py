@@ -231,25 +231,29 @@ class Router:
     def route(
         self,
         stage_activations: List[Tuple[int, torch.Tensor]],
-        nn_predicted_class: Optional[str] = None
+        # nn_predicted_class: Optional[str] = None
+        nn_predicted_class = None
+
     ) -> Tuple[Optional[str], float]:
 
         if not self.mb.pathways:
             return None, 0.0
 
         # FILTER BY PREDICTED CLASS
-        if nn_predicted_class:
-            valid_pathways = {
-                tag: node_ids
-                for tag, node_ids in self.mb.pathways.items()
-                if any(self.mb.nodes[n].class_label == nn_predicted_class for n in node_ids)
-            }
+        # if nn_predicted_class:
+        #     valid_pathways = {
+        #         tag: node_ids
+        #         for tag, node_ids in self.mb.pathways.items()
+        #         if any(self.mb.nodes[n].class_label == nn_predicted_class for n in node_ids)
+        #     }
 
-            if not valid_pathways:
-                return None, 0.0
+        #     if not valid_pathways:
+        #         return None, 0.0
 
-        else:
-            valid_pathways = self.mb.pathways
+        # else:
+        #     valid_pathways = self.mb.pathways
+
+        valid_pathways = self.mb.pathways
 
         best_tag = None
         best_score = 0.0
