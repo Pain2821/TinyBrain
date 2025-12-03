@@ -1,77 +1,164 @@
-# Test.py
-"""
-Complete BitBrain Test harness.
-"""
-from core.fast_learner import MobileNetFastLearner
-from core.memory_bank import MemoryBank
-from core.router import Router
-from core.predict import predict_image
-from core.utils_data import get_dataloaders
-from core.config import TORCH_DEVICE, ROUTER_THRESHOLD
 import torch
-import os
+from torch.utils.data import DataLoader
+from typing import Dict, List
+import numpy as np
 
-print("Initializing BitBrain (test)...")
-train_loader, _ = get_dataloaders("data", batch_size=1)
-class_names = train_loader.dataset.classes # type: ignore
-model = MobileNetFastLearner(num_classes=len(class_names), pretrained=False, capture_stages=5)
-ckpt = "checkpoints/model_best.pt"
-if os.path.exists(ckpt):
-    model.load_state_dict(torch.load(ckpt, map_location="cpu"))
-model.to(TORCH_DEVICE)
-model.eval()
-
-memory_bank = MemoryBank("memory_bank")
-router = Router(memory_bank, threshold=ROUTER_THRESHOLD)
-
-print(f"Memory bank: {len(memory_bank.nodes)} nodes, {len(memory_bank.pathways)} pathways")
-
-test_cases = [
-    # change these paths to your images
-    (r"C:\Users\Grey\Downloads\archive (2)\cats_set\cat.4311.jpg", "cat"),
-    (r"C:\Users\Grey\Downloads\archive (2)\dogs_set\dog.4013.jpg", "dog"),
-    (r"C:\Users\Grey\Downloads\archive (3)\Birds\train\train_2556.jpg", "bird"),
-    # (r"C:\Users\Grey\Downloads\archive (4)\banana_classification\test\overripe\musa-acuminata-mold-e61f3fe3-1d0a-11ec-b881-d8c4975e38aa_jpg.rf.6658b435fdfbc7604a51fc29e402e7fa.jpg","banana"),
-
-    # (r"C:\Users\Grey\Downloads\archive (5)\MY_data\test\watermelon\img_1341.jpeg","watermelon"),
-    # (r"C:\Users\Grey\Downloads\archive (5)\MY_data\test\kiwi\img_1311.jpeg","kiwi"),
-    # (r"C:\Users\Grey\Downloads\archive (5)\MY_data\test\mango\img_1161.jpeg","mango"),
-    # (r"C:\Users\Grey\Downloads\archive (5)\MY_data\test\orange\img_901.jpeg","orange"),
-    # (r"C:\Users\Grey\Downloads\archive (5)\MY_data\test\pinenapple\img_161.jpeg","pinenapple"),
-    # (r"C:\Users\Grey\Downloads\archive (5)\MY_data\test\stawberries\img_91.jpeg","stawberries"),
-    # (r"C:\Users\Grey\Downloads\archive (5)\MY_data\test\avocado\img_311.jpeg","avocado"),
-    # (r"C:\Users\Grey\Downloads\archive (5)\MY_data\test\cherry\img_291.jpeg","cherry"),
-    (r"C:\Users\Grey\Downloads\archive (5)\MY_data\test\apple\img_131.jpeg","apple")
+from core.bitbrain import BitBrain
+from core.config import *
 
 
+def test_on_task(
+    bitbrain: BitBrain,
+    test_loader: DataLoader,
+    task_name: str,
+    device: str = DEVICE,
+    analyze_routing: bool = True
+) -> Dict:
+    bitbrain.eval()
+    
+    correct = 0
+    total = 0
+    all_preds = []
+    all_targets = []
+    all_gates = []
+    
+    with torch.no_grad():
+        for x, y in test_loader:
+            x, y = x.to(device), y.to(device)
+            
+            if analyze_routing and len(bitbrain.pathways) > 0:
+                output, routing_info = bitbrain(x, return_routing_info=True)
+                all_gates.append(routing_info['gates'])
+            else:
+                output = bitbrain(x)
+            
+            preds = output.argmax(dim=1)
+            correct += (preds == y).sum().item()
+            total += y.size(0)
+            
+            all_preds.extend(preds.cpu().numpy())
+            all_targets.extend(y.cpu().numpy())
+    
+    accuracy = correct / total
+    
+    results = {
+        'task_name': task_name,
+        'accuracy': accuracy,
+        'correct': correct,
+        'total': total
+    }
+    
+    # Routing analysis
+    if all_gates:
+        all_gates = torch.cat(all_gates, dim=0)  # [N, num_pathways]
+        avg_gates = all_gates.mean(dim=0)
+        
+        results['routing'] = {
+            'avg_pathway_weights': avg_gates.numpy().tolist(),
+            'most_used_pathway': int(avg_gates.argmax()),
+            'pathway_usage': {
+                i: float(avg_gates[i])
+                for i in range(len(avg_gates))
+            }
+        }
+    
+    return results
 
-]
 
-pathway_used = 0
-nn_used = 0
-pathway_correct = 0
-nn_correct = 0
+def test_all_tasks(
+    bitbrain: BitBrain,
+    task_loaders: Dict[str, DataLoader],
+    device: str = DEVICE
+) -> Dict:
 
-for img_path, expected in test_cases:
-    print("\n" + "-"*40)
-    print("Image:", os.path.basename(img_path))
-    result = predict_image(model, router, memory_bank, img_path, class_names)
-    print("Predicted:", result["prediction"], "Source:", result["source"], "Confidence:", result["confidence"])
-    correct = (result["prediction"] == expected)
-    if result["source"] == "pathway":
-        pathway_used += 1
-        if correct:
-            pathway_correct += 1
-    else:
-        nn_used += 1
-        if correct:
-            nn_correct += 1
+    print("\n" + "="*70)
+    print("Testing on All Tasks")
+    print("="*70 + "\n")
+    
+    results = {}
+    
+    for task_name, test_loader in task_loaders.items():
+        print(f"Testing on: {task_name}")
+        task_results = test_on_task(
+            bitbrain,
+            test_loader,
+            task_name,
+            device,
+            analyze_routing=True
+        )
+        
+        results[task_name] = task_results
+        
+        print(f"  Accuracy: {task_results['accuracy']:.4f}")
+        
+        if 'routing' in task_results:
+            most_used = task_results['routing']['most_used_pathway']
+            usage = task_results['routing']['avg_pathway_weights'][most_used]
+            print(f"  Most used pathway: {most_used} ({usage*100:.1f}%)")
+        
+        print()
+    
+    # Summary
+    print("="*70)
+    print("Summary:")
+    print(f"{'Task':<20} {'Accuracy':<12} {'Correct':<10} {'Total':<10}")
+    print("-"*70)
+    
+    accuracies = []
+    for task_name, task_result in results.items():
+        acc = task_result['accuracy']
+        correct = task_result['correct']
+        total = task_result['total']
+        accuracies.append(acc)
+        print(f"{task_name:<20} {acc:>10.4f}   {correct:>8d}   {total:>8d}")
+    
+    avg_acc = np.mean(accuracies)
+    print("-"*70)
+    print(f"{'Average':<20} {avg_acc:>10.4f}")
+    print("="*70 + "\n")
+    
+    results['average_accuracy'] = avg_acc
+    
+    return results
 
-print("\nSummary")
-print("Pathway used:", pathway_used)
-print("Pathway accuracy:", pathway_correct)
-print("NN used:", nn_used)
-print("NN accuracy:", nn_correct)
-print("Router threshold:", router.threshold)
-if pathway_used == 0:
-    print("\n⚠️ No pathway predictions; check memory_bank/ and router threshold.")
+
+def measure_forgetting(
+    task_accuracies: Dict[str, List[float]],
+    task_order: List[str]
+) -> Dict:
+    forgetting = {}
+    
+    for i, task_name in enumerate(task_order[:-1]):  # Exclude last task
+        accs = task_accuracies[task_name]
+        
+        # Accuracy right after training this task
+        acc_initial = accs[i]
+        
+        # Accuracy after training all subsequent tasks
+        acc_final = accs[-1]
+        
+        # Forgetting = drop in accuracy
+        forget = acc_initial - acc_final
+        
+        forgetting[task_name] = {
+            'initial_acc': acc_initial,
+            'final_acc': acc_final,
+            'forgetting': forget,
+            'retention_rate': acc_final / acc_initial if acc_initial > 0 else 0
+        }
+    
+    # Average forgetting
+    avg_forgetting = np.mean([f['forgetting'] for f in forgetting.values()])
+    avg_retention = np.mean([f['retention_rate'] for f in forgetting.values()])
+    
+    return {
+        'per_task': forgetting,
+        'avg_forgetting': avg_forgetting,
+        'avg_retention_rate': avg_retention
+    }
+
+
+if __name__ == "__main__":
+    print("BitBrain Testing Module")
+    print("This file contains testing utilities.")
+    print("Import and use in your main training script.")

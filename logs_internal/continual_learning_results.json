@@ -1,0 +1,18 @@
+{
+  "tasks": [
+    {
+      "name": "cats_dogs",
+      "task_idx": 0,
+      "best_val_acc": 0.9625
+    }
+  ],
+  "memory_history": [
+    {
+      "fast_learner_mb": 8.493171691894531,
+      "pathways_mb": 0.5308232307434082,
+      "router_mb": 3.5058631896972656,
+      "total_mb": 12.529858112335205,
+      "num_pathways": 1
+    }
+  ]
+}
