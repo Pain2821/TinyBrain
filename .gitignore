@@ -1,3 +1,98 @@
 /data
 /venv
 /__pycache__
+
+/.venv
+# ===============================
+# PYTHON
+# ===============================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# ===============================
+# VIRTUAL ENVIRONMENT
+# ===============================
+venv/
+ENV/
+env/
+.venv/
+
+# ===============================
+# ENVIRONMENT VARIABLES (IMPORTANT)
+# ===============================
+.env
+.env.*
+!.env.example
+
+# ===============================
+# LOG FILES
+# ===============================
+*.log
+logs/
+
+# ===============================
+# DATABASE FILES
+# ===============================
+*.sqlite3
+*.db
+
+# ===============================
+# CACHE & TEMP
+# ===============================
+.cache/
+.pytest_cache/
+.mypy_cache/
+
+# ===============================
+# IDE & EDITOR FILES
+# ===============================
+.vscode/
+.idea/
+*.swp
+*.swo
+*.bak
+
+# ===============================
+# OS FILES
+# ===============================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ===============================
+# UPLOADS / MEDIA (OPTIONAL)
+# ===============================
+media/
+uploads/
+
+# ===============================
+# JUPYTER
+# ===============================
+.ipynb_checkpoints/
+
+# ===============================
+# GUNICORN / UVICORN
+# ===============================
+gunicorn.pid
+uvicorn.pid
+
+# ===============================
+# NODE (If frontend inside same repo)
+# ===============================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ===============================
+# MIGRATIONS (OPTIONAL)
+# Uncomment if you don't want to track migrations
+# ===============================
+# alembic/versions/*
