@@ -4,14 +4,102 @@ import copy
 from typing import Dict, Tuple
 
 
+# def quantize_to_ternary(
+#     model: nn.Module, 
+#     threshold_percentile: float = 0.70,
+#     layer_wise: bool = True
+# ) -> nn.Module:
+    
+#     print(f"[QUANTIZATION] Starting ternary quantization (1.58-bit)...")
+#     print(f"  Threshold: {threshold_percentile:.0%} (keep top {(1-threshold_percentile)*100:.0f}%)")
+    
+#     quantized_model = copy.deepcopy(model)
+    
+#     stats = {
+#         'total_params': 0,
+#         'non_zero_params': 0,
+#         'positive_params': 0,
+#         'negative_params': 0,
+#         'layer_stats': {}
+#     }
+    
+#     for name, param in quantized_model.named_parameters():
+#         if 'weight' not in name or len(param.shape) < 2:
+#             continue  # Skip biases and 1D layers
+        
+#         w = param.data
+#         stats['total_params'] += w.numel()
+        
+#         # if layer_wise:
+#         #     # Per-layer threshold
+#         #     threshold = torch.quantile(torch.abs(w.flatten()), threshold_percentile)
+#         # else:
+#         #     # Global threshold (computed once, used here)
+#         #     threshold = threshold_percentile  # Assumes pre-computed
+
+#         if 'classifier' in name:
+#             # Use less aggressive quantization for classifier
+#             threshold = torch.quantile(torch.abs(w.flatten()), 0.50)  # Keep 50%
+#         else:
+#             threshold = torch.quantile(torch.abs(w.flatten()), threshold_percentile)
+        
+#         # Create ternary weights
+#         ternary = torch.zeros_like(w)
+#         ternary[w > threshold] = 1.0
+#         ternary[w < -threshold] = -1.0
+        
+#         # Update parameter
+#         param.data = ternary
+        
+#         # Statistics
+#         non_zero = (ternary != 0).sum().item()
+#         positive = (ternary == 1).sum().item()
+#         negative = (ternary == -1).sum().item()
+#         sparsity = 1.0 - (non_zero / w.numel())
+        
+#         stats['non_zero_params'] += non_zero
+#         stats['positive_params'] += positive
+#         stats['negative_params'] += negative
+        
+#         stats['layer_stats'][name] = {
+#             'sparsity': sparsity,
+#             'positive_ratio': positive / w.numel(),
+#             'negative_ratio': negative / w.numel(),
+#             'params': w.numel()
+#         }
+        
+#         print(f"    {name:40s}: {sparsity*100:5.1f}% sparse, "
+#               f"{positive:7d} pos, {negative:7d} neg")
+    
+#     # Overall stats
+#     overall_sparsity = 1.0 - (stats['non_zero_params'] / stats['total_params'])
+#     print(f"\n  Overall sparsity: {overall_sparsity*100:.1f}%")
+#     print(f"  Positive weights: {stats['positive_params']:,}")
+#     print(f"  Negative weights: {stats['negative_params']:,}")
+#     print(f"  Zero weights: {stats['total_params'] - stats['non_zero_params']:,}")
+    
+#     return quantized_model, stats # pyright: ignore[reportReturnType]
+
 def quantize_to_ternary(
     model: nn.Module, 
     threshold_percentile: float = 0.70,
-    layer_wise: bool = True
-) -> nn.Module:
+    skip_classifier: bool = True,  # NEW PARAMETER
+    classifier_threshold: float = 0.50  # Less aggressive for classifier
+):
+    """
+    Quantize model weights to {-1, 0, 1}
     
+    FIX: Don't aggressively quantize classifier
+    - Classifier is critical for predictions
+    - Use less aggressive threshold (keep 50% instead of 30%)
+    - Or skip quantization entirely
+    """
     print(f"[QUANTIZATION] Starting ternary quantization (1.58-bit)...")
-    print(f"  Threshold: {threshold_percentile:.0%} (keep top {(1-threshold_percentile)*100:.0f}%)")
+    print(f"  Backbone threshold: {threshold_percentile:.0%} (keep top {(1-threshold_percentile)*100:.0f}%)")
+    if skip_classifier:
+        print(f"  Classifier: KEPT IN FP32 (no quantization)")
+    else:
+        print(f"  Classifier threshold: {classifier_threshold:.0%} (keep top {(1-classifier_threshold)*100:.0f}%)")
     
     quantized_model = copy.deepcopy(model)
     
@@ -25,17 +113,25 @@ def quantize_to_ternary(
     
     for name, param in quantized_model.named_parameters():
         if 'weight' not in name or len(param.shape) < 2:
-            continue  # Skip biases and 1D layers
+            continue
         
         w = param.data
         stats['total_params'] += w.numel()
         
-        if layer_wise:
-            # Per-layer threshold
-            threshold = torch.quantile(torch.abs(w.flatten()), threshold_percentile)
+        # FIX: Handle classifier specially
+        if 'classifier' in name or 'head' in name or 'fc' in name.split('.')[-1]:
+            if skip_classifier:
+                # Don't quantize classifier at all
+                print(f"    {name:40s}: SKIPPED (kept in FP32)")
+                stats['non_zero_params'] += w.numel()
+                continue
+            else:
+                # Use less aggressive threshold for classifier
+                threshold = torch.quantile(torch.abs(w.flatten()), classifier_threshold)
+                print(f"    {name:40s}: Using softer threshold ({classifier_threshold:.0%})")
         else:
-            # Global threshold (computed once, used here)
-            threshold = threshold_percentile  # Assumes pre-computed
+            # Normal threshold for backbone
+            threshold = torch.quantile(torch.abs(w.flatten()), threshold_percentile)
         
         # Create ternary weights
         ternary = torch.zeros_like(w)
@@ -72,8 +168,7 @@ def quantize_to_ternary(
     print(f"  Negative weights: {stats['negative_params']:,}")
     print(f"  Zero weights: {stats['total_params'] - stats['non_zero_params']:,}")
     
-    return quantized_model, stats # pyright: ignore[reportReturnType]
-
+    return quantized_model, stats
 
 def estimate_ternary_size(model: nn.Module) -> Dict[str, float]:
     total_params = sum(p.numel() for p in model.parameters())

@@ -28,7 +28,14 @@ def test_on_task(
             
             if analyze_routing and len(bitbrain.pathways) > 0:
                 output, routing_info = bitbrain(x, return_routing_info=True)
-                all_gates.append(routing_info['gates'])
+                # all_gates.append(routing_info['gates'])
+                if isinstance(routing_info, dict) and 'gates' in routing_info:
+                    all_gates.append(routing_info['gates'])
+                else:
+                    # Log details for debugging — keep behavior defined (skip or append None)
+                    print("WARNING: routing_info missing 'gates'. routing_info =", routing_info)
+                    # Decide: append None or skip. Appending None keeps list indices aligned.
+                    all_gates.append(None)               
             else:
                 output = bitbrain(x)
             
@@ -157,7 +164,69 @@ def measure_forgetting(
         'avg_retention_rate': avg_retention
     }
 
-
+def test_pathway_quality(
+    bitbrain: BitBrain,
+    test_loader: DataLoader,
+    device: str = 'cuda'
+):
+    """
+    Test pathway quality independently
+    
+    This helps diagnose if pathways are broken
+    """
+    if len(bitbrain.pathways) == 0:
+        print("No pathways to test")
+        return
+    
+    print("\n" + "="*70)
+    print("Pathway Quality Analysis")
+    print("="*70 + "\n")
+    
+    bitbrain.eval()
+    
+    for pathway_idx, pathway in enumerate(bitbrain.pathways):
+        correct = 0
+        total = 0
+        
+        with torch.no_grad():
+            for x, y in test_loader:
+                x, y = x.to(device), y.to(device)
+                
+                # Test pathway independently
+                pathway_pred = pathway(x)
+                preds = pathway_pred.argmax(dim=1)
+                
+                correct += (preds == y).sum().item()
+                total += y.size(0)
+        
+        accuracy = correct / total
+        print(f"Pathway {pathway_idx} ({pathway.task_name}):")
+        print(f"  Independent accuracy: {accuracy:.4f}")
+        print(f"  Memory: {pathway.memory_mb:.2f} MB")
+        print(f"  Sparsity: {pathway.get_sparsity()*100:.1f}%") # type: ignore
+        print()
+    
+    # Also test Fast Learner
+    correct = 0
+    total = 0
+    
+    with torch.no_grad():
+        for x, y in test_loader:
+            x, y = x.to(device), y.to(device)
+            
+            features = bitbrain.extract_features(x)
+            fast_pred = bitbrain.fast_learner.classifier(features) # type: ignore
+            preds = fast_pred.argmax(dim=1)
+            
+            correct += (preds == y).sum().item()
+            total += y.size(0)
+    
+    print(f"Fast Learner:")
+    print(f"  Independent accuracy: {correct/total:.4f}")
+    print()
+    
+    print("="*70 + "\n")
+    
 if __name__ == "__main__":
     print("BitBrain Testing Module")
     print("This file contains testing utilities.")

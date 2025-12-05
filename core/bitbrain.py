@@ -80,11 +80,110 @@ class BitBrain(nn.Module):
         
         raise NotImplementedError()
     
-    def forward(
-        self, 
-        x: torch.Tensor,
-        return_routing_info: bool = False
-    ):
+    # def forward(self, x: torch.Tensor, return_routing_info: bool = False):
+    #     """
+    #     Forward pass with proper single-pathway handling
+        
+    #     FIX: When only 1 pathway exists:
+    #     - During training: Use it normally to train router
+    #     - During testing: Rely more on Fast Learner (pathway might be degraded)
+    #     """
+    #     batch_size = x.size(0)
+        
+    #     # Extract features
+    #     features = self.extract_features(x)
+        
+    #     # Fast Learner prediction
+    #     fast_pred = self.fast_learner.classifier(features) # type: ignore
+        
+    #     # No pathways - use Fast Learner only
+    #     if len(self.pathways) == 0:
+    #         if return_routing_info:
+    #             info = {
+    #                 'source': 'fast_learner_only',
+    #                 'gates': None,
+    #                 'num_pathways': 0,
+    #                 'fast_weight': 1.0,
+    #                 'pathway_weight': 0.0
+    #             }
+    #             return fast_pred, info
+    #         return fast_pred
+        
+    #     # Router gates
+    #     gates = self.router(features)  # [batch, num_pathways]
+    #     self.router.record_routing(gates)
+        
+    #     # Pathway predictions
+    #     pathway_preds = []
+    #     for pathway in self.pathways:
+    #         pred = pathway(x)
+    #         pathway_preds.append(pred)
+        
+    #     pathway_preds = torch.stack(pathway_preds, dim=1)  # [B, P, C]
+        
+    #     # Weighted combination
+    #     pathway_output = torch.einsum('bp,bpc->bc', gates, pathway_preds)
+        
+    #     # FIX: Adaptive combination based on number of pathways
+    #     if len(self.pathways) == 1:
+    #         # Single pathway - might be degraded by quantization
+    #         if self.training:
+    #             # During training: use normal weights to train router
+    #             fast_weight = 0.7
+    #             pathway_weight = 0.3
+    #         else:
+    #             # During testing: trust Fast Learner more
+    #             # Pathway is quantized and might be broken
+    #             fast_weight = 0.9  # Trust Fast Learner heavily
+    #             pathway_weight = 0.1  # Pathway might be broken
+                
+    #         output = fast_weight * fast_pred + pathway_weight * pathway_output
+            
+    #     elif len(self.pathways) <= 3:
+    #         # Few pathways - gradually trust them more
+    #         if self.training:
+    #             fast_weight = 0.6
+    #             pathway_weight = 0.4
+    #         else:
+    #             fast_weight = 0.5
+    #             pathway_weight = 0.5
+                
+    #         output = fast_weight * fast_pred + pathway_weight * pathway_output
+            
+    #     else:
+    #         # Many pathways - trust pathway routing
+    #         if self.training:
+    #             fast_weight = 0.5
+    #             pathway_weight = 0.5
+    #         else:
+    #             fast_weight = 0.3  # Pathways have learned multiple tasks
+    #             pathway_weight = 0.7
+                
+    #         output = fast_weight * fast_pred + pathway_weight * pathway_output
+        
+    #     if return_routing_info:
+    #         info = {
+    #             'gates': gates.detach().cpu(),
+    #             'fast_pred': fast_pred.detach().cpu(),
+    #             'pathway_pred': pathway_output.detach().cpu(),
+    #             'num_pathways': len(self.pathways),
+    #             'source': f'{len(self.pathways)}_pathways',
+    #             'fast_weight': fast_weight,
+    #             'pathway_weight': pathway_weight
+    #         }
+    #         return output, info
+        
+    #     return output
+
+    def forward(self, x: torch.Tensor, return_routing_info: bool = False):
+        """
+        Forward pass with CORRECTED routing
+        
+        FIXES:
+        1. Proper weight normalization (no double weighting)
+        2. Entropy-based adaptive weighting (optional)
+        3. Per-sample confidence adjustment
+        """
         batch_size = x.size(0)
         
         # Extract features
@@ -93,19 +192,21 @@ class BitBrain(nn.Module):
         # Fast Learner prediction
         fast_pred = self.fast_learner.classifier(features) # type: ignore
         
-        # If no pathways, return Fast Learner only
+        # No pathways - use Fast Learner only
         if len(self.pathways) == 0:
             if return_routing_info:
                 info = {
                     'source': 'fast_learner_only',
                     'gates': None,
-                    'num_pathways': 0
+                    'num_pathways': 0,
+                    'fast_weight': 1.0,
+                    'pathway_weight': 0.0
                 }
                 return fast_pred, info
             return fast_pred
         
-        # Router gates
-        gates = self.router(features)  # [batch, num_pathways]
+        # Router gates (already normalized via softmax)
+        gates = self.router(features)  # [B, P]
         self.router.record_routing(gates)
         
         # Pathway predictions
@@ -116,16 +217,58 @@ class BitBrain(nn.Module):
         
         pathway_preds = torch.stack(pathway_preds, dim=1)  # [B, P, C]
         
-        # Weighted combination
+        # Weighted pathway output (gates already sum to 1!)
         pathway_output = torch.einsum('bp,bpc->bc', gates, pathway_preds)
         
-        # Combine Fast Learner + Pathways
-        if self.training:
-            output = (self.fast_learner_weight * fast_pred + 
-                     self.pathway_weight * pathway_output)
+        # ==== ADAPTIVE WEIGHTING STRATEGY ====
+        
+        # Base weights by pathway count
+        if len(self.pathways) == 1:
+            base_fast = 0.7
+            base_pathway = 0.3
+        elif len(self.pathways) <= 3:
+            base_fast = 0.5
+            base_pathway = 0.5
         else:
-            # Equal weight during inference
-            output = 0.5 * fast_pred + 0.5 * pathway_output
+            base_fast = 0.3
+            base_pathway = 0.7
+        
+        # Optional: Adjust by training/testing
+        if not self.training:
+            # During testing, might want different behavior
+            if len(self.pathways) == 1:
+                base_fast = 0.8  # Single pathway might be degraded
+                base_pathway = 0.2
+        
+        # Optional: Entropy-based adjustment
+        USE_ENTROPY = True  # Set this as config parameter
+        
+        if USE_ENTROPY:
+            # Calculate routing confidence (inverse of entropy)
+            epsilon = 1e-8
+            entropy = -(gates * torch.log(gates + epsilon)).sum(dim=1)  # [B]
+            max_entropy = torch.log(torch.tensor(len(self.pathways), dtype=torch.float32, device=gates.device))
+            normalized_entropy = entropy / max_entropy  # [B] in [0, 1]
+            
+            # Adjust weights per sample
+            # High entropy (uncertain) → trust Fast Learner more
+            # Low entropy (confident) → trust Pathways more
+            entropy_adj = normalized_entropy.unsqueeze(1)  # [B, 1]
+            
+            fast_weight = base_fast + 0.15 * entropy_adj
+            pathway_weight = base_pathway - 0.15 * entropy_adj
+        else:
+            # Static weights
+            fast_weight = torch.tensor([[base_fast]], device=x.device).expand(batch_size, 1)
+            pathway_weight = torch.tensor([[base_pathway]], device=x.device).expand(batch_size, 1)
+        
+        # CRITICAL: Normalize weights to sum to 1
+        total_weight = fast_weight + pathway_weight
+        fast_weight = fast_weight / total_weight
+        pathway_weight = pathway_weight / total_weight
+        
+        # Final prediction with proper weighting
+        output = fast_weight * fast_pred + pathway_weight * pathway_output
         
         if return_routing_info:
             info = {
@@ -133,18 +276,77 @@ class BitBrain(nn.Module):
                 'fast_pred': fast_pred.detach().cpu(),
                 'pathway_pred': pathway_output.detach().cpu(),
                 'num_pathways': len(self.pathways),
-                'source': 'combined'
+                'source': f'{len(self.pathways)}_pathways',
+                'fast_weight_mean': fast_weight.mean().item(),
+                'pathway_weight_mean': pathway_weight.mean().item(),
+                'fast_weight_std': fast_weight.std().item() if USE_ENTROPY else 0.0,
+                'pathway_weight_std': pathway_weight.std().item() if USE_ENTROPY else 0.0,
             }
+            
+            if USE_ENTROPY:
+                info['entropy_mean'] = normalized_entropy.mean().item()
+                info['entropy_std'] = normalized_entropy.std().item()
+            
             return output, info
         
         return output
-    
+
+    # def consolidate_task(
+    #     self,
+    #     task_name: str,
+    #     threshold_percentile: float = 0.70,
+    #     quantize: bool = True
+    # ):
+    #     print(f"\n{'='*60}")
+    #     print(f"[CONSOLIDATION] Task: {task_name}")
+    #     print(f"{'='*60}\n")
+        
+    #     # Copy Fast Learner
+    #     pathway_network = copy.deepcopy(self.fast_learner)
+        
+    #     # Quantize to ternary
+    #     if quantize:
+    #         pathway_network, quant_stats = quantize_to_ternary(
+    #             pathway_network, 
+    #             threshold_percentile
+    #         ) # type: ignore
+    #     else:
+    #         print("  [WARNING] Quantization disabled - using FP32")
+    #         quant_stats = {}
+        
+    #     # Create Pathway
+    #     task_idx = len(self.pathways)
+    #     pathway = Pathway(
+    #         pathway_network,
+    #         task_name,
+    #         task_idx,
+    #         quant_stats
+    #     )
+        
+    #     # Add to bank
+    #     self.pathways.append(pathway)
+        
+    #     # Update router
+    #     self.router.add_pathway()
+        
+    #     # Record task
+    #     self.task_history.append(task_name)
+        
+    #     print(f"\n  ✓ Pathway created: {pathway}")
+    #     print(f"  ✓ Total pathways: {len(self.pathways)}")
+    #     print(f"  ✓ Total memory: {self.get_total_memory():.2f} MB\n")
+    #     print(f"{'='*60}\n")
+
     def consolidate_task(
         self,
         task_name: str,
         threshold_percentile: float = 0.70,
-        quantize: bool = True
+        quantize: bool = True,
+        skip_classifier: bool = True  # NEW: Don't quantize classifier
     ):
+        """
+        Consolidate with option to preserve classifier
+        """
         print(f"\n{'='*60}")
         print(f"[CONSOLIDATION] Task: {task_name}")
         print(f"{'='*60}\n")
@@ -154,10 +356,12 @@ class BitBrain(nn.Module):
         
         # Quantize to ternary
         if quantize:
+            # Use FIXED quantization that preserves classifier
             pathway_network, quant_stats = quantize_to_ternary(
                 pathway_network, 
-                threshold_percentile
-            ) # type: ignore
+                threshold_percentile,
+                skip_classifier=skip_classifier  # NEW
+            )
         else:
             print("  [WARNING] Quantization disabled - using FP32")
             quant_stats = {}
@@ -184,7 +388,8 @@ class BitBrain(nn.Module):
         print(f"  ✓ Total pathways: {len(self.pathways)}")
         print(f"  ✓ Total memory: {self.get_total_memory():.2f} MB\n")
         print(f"{'='*60}\n")
-    
+
+
     def reset_fast_learner(
         self,
         new_num_classes: Optional[int] = None,

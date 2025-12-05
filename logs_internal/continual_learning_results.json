@@ -3,7 +3,7 @@
     {
       "name": "cats_dogs",
       "task_idx": 0,
-      "best_val_acc": 0.9625
+      "best_val_acc": 1.0
     }
   ],
   "memory_history": [

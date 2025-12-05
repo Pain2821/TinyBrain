@@ -111,6 +111,26 @@ def main():
         task_data,
         device=DEVICE
     )
+
+    # ========== NEW: PATHWAY QUALITY CHECK ==========
+    
+    print("\n" + "="*70)
+    print("Pathway Quality Check")
+    print("="*70 + "\n")
+    
+    # Test each pathway independently
+    from test import test_pathway_quality
+    
+    for task_config in task_data:
+        test_loader = task_config['val_loader']
+        test_pathway_quality(bitbrain, test_loader, device=DEVICE)
+        break  # Just test on first task for now
+    
+    # ========== FINAL EVALUATION ==========
+    
+    print("\n" + "="*70)
+    print("Final Evaluation: Testing on ALL tasks")
+    print("="*70 + "\n")
     
     # ========== FINAL EVALUATION ==========
     
