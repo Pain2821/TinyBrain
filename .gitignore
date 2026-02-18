@@ -1,4 +1,6 @@
 /data
+/data_backup
+/datasets
 /venv
 /__pycache__
 
