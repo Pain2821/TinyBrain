@@ -1,8 +1,8 @@
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from typing import Optional
 import time
+from contextlib import nullcontext
 
 from core.bitbrain import BitBrain
 from core.config import *
@@ -38,7 +38,14 @@ def train_task(
     )
     
     # Loss
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.CrossEntropyLoss(label_smoothing=LABEL_SMOOTHING)
+    use_amp = USE_AMP and device.startswith('cuda')
+    amp_module = getattr(torch, 'amp', None)
+    scaler = (
+        amp_module.GradScaler('cuda', enabled=use_amp)
+        if amp_module is not None and hasattr(amp_module, 'GradScaler')
+        else None
+    )
     
     # Training history
     history = {
@@ -64,13 +71,49 @@ def train_task(
             x, y = x.to(device), y.to(device)
             
             # Forward
-            output = bitbrain(x)
-            loss = criterion(output, y)
+            if use_amp and amp_module is not None and hasattr(amp_module, 'autocast'):
+                autocast_ctx = amp_module.autocast('cuda', enabled=True)
+            else:
+                autocast_ctx = nullcontext()
+
+            with autocast_ctx:
+                if len(bitbrain.pathways) > 0:
+                    output, routing_info = bitbrain(x, return_routing_info=True)
+                else:
+                    output = bitbrain(x)
+                    routing_info = None
+
+                ce_loss = criterion(output, y)
+                reg_loss = torch.tensor(0.0, device=device)
+
+                if isinstance(routing_info, dict):
+                    gates_live = routing_info.get('raw_gates_live')
+                    if isinstance(gates_live, torch.Tensor) and gates_live.size(1) > 1:
+                        eps = 1e-8
+                        entropy = -(gates_live * torch.log(gates_live + eps)).sum(dim=1).mean()
+                        entropy_penalty = -entropy
+                        mean_usage = gates_live.mean(dim=0)
+                        uniform = torch.full_like(mean_usage, 1.0 / mean_usage.numel())
+                        balance_penalty = ((mean_usage - uniform) ** 2).sum()
+                        reg_loss = (
+                            ROUTER_ENTROPY_REG * entropy_penalty +
+                            ROUTER_BALANCE_REG * balance_penalty
+                        )
+
+                loss = ce_loss + reg_loss
             
             # Backward
             optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
+            if scaler is not None:
+                scaler.scale(loss).backward()
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(bitbrain.parameters(), GRAD_CLIP_NORM)
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(bitbrain.parameters(), GRAD_CLIP_NORM)
+                optimizer.step()
             
             # Statistics
             train_loss += loss.item() * x.size(0)
@@ -124,7 +167,7 @@ def train_task(
         if val_acc > best_val_acc:
             best_val_acc = val_acc
             best_epoch = epoch + 1
-            print(f"  ⭐ New best validation accuracy!")
+            print(f"  [BEST] New best validation accuracy!")
             
             # Save checkpoint
             checkpoint_path = CHECKPOINT_DIR / f'bitbrain_{task_name}_best.pt'

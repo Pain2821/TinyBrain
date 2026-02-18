@@ -1,0 +1,8 @@
+[
+  {
+    "name": "cats_dogs",
+    "data_dir": "datasets/cats_dogs",
+    "num_classes": 2,
+    "epochs": 8
+  }
+]

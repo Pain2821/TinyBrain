@@ -107,7 +107,7 @@ def train_sequential():
     
     if consolidate.lower() == 'y':
         bitbrain.consolidate_task(task_name)
-        print("✓ Task consolidated!\n")
+        print("[OK] Task consolidated!\n")
     else:
         print("Skipped consolidation.\n")
     

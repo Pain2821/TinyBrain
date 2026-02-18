@@ -49,8 +49,8 @@ class Pathway(nn.Module):
         
         return zeros / total if total > 0 else 0.0
     
-    def record_usage(self):
-        self.usage_count += 1
+    def record_usage(self, count: int = 1):
+        self.usage_count += count
     
     def record_accuracy(self, acc: float):
         self.accuracy_history.append(acc)

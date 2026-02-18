@@ -1,14 +1,43 @@
 import torch
 from pathlib import Path
+import json
+import random
+import numpy as np
 
 from core.bitbrain import BitBrain
 from core.config import *
 from utils.data import get_task_dataloaders
 from training.continual_training import continual_learning
-from test import test_all_tasks, measure_forgetting
+from test import test_all_tasks
 
 
-def main():
+def set_seed(seed: int):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+
+def load_task_configs(tasks_file: str = ""):
+    if tasks_file:
+        with open(tasks_file, 'r', encoding='utf-8') as f:
+            task_configs = json.load(f)
+        if not isinstance(task_configs, list):
+            raise ValueError("Task config file must contain a JSON array.")
+        return task_configs
+
+    return [
+        {
+            'name': 'cats_dogs',
+            'data_dir': 'data',
+            'num_classes': 2,
+            'epochs': EPOCHS_PER_TASK
+        }
+    ]
+
+
+def main(tasks_file: str = "", epochs_override: int = 0, quantize_pathways: bool = QUANTIZE_PATHWAYS):
     """
     Main experiment: Train BitBrain on sequence of tasks
     """
@@ -17,41 +46,13 @@ def main():
     print("BitBrain: Internal Memory Continual Learning")
     print("="*70)
     print(f"Device: {DEVICE}")
-    print(f"Quantization enabled: {QUANTIZE_PATHWAYS}")
+    print(f"Quantization enabled: {quantize_pathways}")
     print(f"Threshold percentile: {THRESHOLD_PERCENTILE}")
+    print(f"Top-K routing: {ENABLE_TOPK_ROUTING} (k={TOPK_PATHWAYS})")
+    print(f"AMP enabled: {USE_AMP and DEVICE.startswith('cuda')}")
     print("="*70 + "\n")
     
-    # ========== CONFIGURE YOUR TASKS HERE ==========
-    
-    # Example configuration for your experiment
-    # Adjust paths and number of classes for your datasets
-    
-    task_configs = [
-        {
-            'name': 'cats_dogs',
-            'data_dir': 'data',  # Change to your path
-            'num_classes': 2,
-            'epochs': 8
-        },
-        # {
-        #     'name': 'cats_dogs',
-        #     'data_dir': 'data/cats_dogs',  # Change to your path
-        #     'num_classes': 2,
-        #     'epochs': 8
-        # },
-        # {
-        #     'name': 'banana_bird',
-        #     'data_dir': 'data/banana_bird',
-        #     'num_classes': 2,
-        #     'epochs': 8
-        # },
-        # {
-        #     'name': 'fruits',
-        #     'data_dir': 'data/fruits',
-        #     'num_classes': 9,
-        #     'epochs': 10
-        # }
-    ]
+    task_configs = load_task_configs(tasks_file)
     
     # ========== INITIALIZE BITBRAIN ==========
     
@@ -73,6 +74,8 @@ def main():
     task_data = []
     for task_config in task_configs:
         data_dir = task_config['data_dir']
+        if epochs_override > 0:
+            task_config['epochs'] = epochs_override
         
         # Check if data exists
         if not Path(data_dir).exists():
@@ -92,7 +95,7 @@ def main():
         task_config['val_loader'] = val_loader
         task_data.append(task_config)
         
-        print(f"  ✓ {task_config['name']}: "
+        print(f"  [OK] {task_config['name']}: "
               f"{len(train_loader.dataset)} train, " # type: ignore
               f"{len(val_loader.dataset)} val") # type: ignore
     
@@ -109,7 +112,8 @@ def main():
     results = continual_learning(
         bitbrain,
         task_data,
-        device=DEVICE
+        device=DEVICE,
+        quantize_pathways=quantize_pathways
     )
 
     # ========== NEW: PATHWAY QUALITY CHECK ==========
@@ -127,13 +131,6 @@ def main():
         break  # Just test on first task for now
     
     # ========== FINAL EVALUATION ==========
-    
-    print("\n" + "="*70)
-    print("Final Evaluation: Testing on ALL tasks")
-    print("="*70 + "\n")
-    
-    # ========== FINAL EVALUATION ==========
-    
     print("\n" + "="*70)
     print("Final Evaluation: Testing on ALL tasks")
     print("="*70 + "\n")
@@ -275,20 +272,30 @@ if __name__ == "__main__":
     parser.add_argument('--mode', type=str, default='train',
                        choices=['train', 'test_quant', 'compare'],
                        help='Mode to run')
+    parser.add_argument('--tasks-file', type=str, default='',
+                       help='JSON file with task configs (list of task objects)')
+    parser.add_argument('--epochs', type=int, default=0,
+                       help='Override epochs for all tasks (0 keeps per-task value)')
+    parser.add_argument('--seed', type=int, default=SEED,
+                       help='Random seed for reproducibility')
     parser.add_argument('--no-quantize', action='store_true',
                        help='Disable ternary quantization (test only)')
     
     args = parser.parse_args()
     
     # Override config if requested
-    if args.no_quantize:
-        import core.config as cfg
-        cfg.QUANTIZE_PATHWAYS = False
+    quantize_pathways = not args.no_quantize
+    if not quantize_pathways:
         print("[WARNING] Quantization disabled - pathways will be FP32\n")
     
     # Run selected mode
     if args.mode == 'train':
-        main()
+        set_seed(args.seed)
+        main(
+            tasks_file=args.tasks_file,
+            epochs_override=args.epochs,
+            quantize_pathways=quantize_pathways
+        )
     elif args.mode == 'test_quant':
         test_quantization_quality()
     elif args.mode == 'compare':

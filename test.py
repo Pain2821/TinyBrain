@@ -28,14 +28,10 @@ def test_on_task(
             
             if analyze_routing and len(bitbrain.pathways) > 0:
                 output, routing_info = bitbrain(x, return_routing_info=True)
-                # all_gates.append(routing_info['gates'])
-                if isinstance(routing_info, dict) and 'gates' in routing_info:
-                    all_gates.append(routing_info['gates'])
-                else:
-                    # Log details for debugging — keep behavior defined (skip or append None)
-                    print("WARNING: routing_info missing 'gates'. routing_info =", routing_info)
-                    # Decide: append None or skip. Appending None keeps list indices aligned.
-                    all_gates.append(None)               
+                if isinstance(routing_info, dict):
+                    gates = routing_info.get('gates')
+                    if isinstance(gates, torch.Tensor):
+                        all_gates.append(gates)
             else:
                 output = bitbrain(x)
             
@@ -56,7 +52,7 @@ def test_on_task(
     }
     
     # Routing analysis
-    if all_gates:
+    if len(all_gates) > 0:
         all_gates = torch.cat(all_gates, dim=0)  # [N, num_pathways]
         avg_gates = all_gates.mean(dim=0)
         

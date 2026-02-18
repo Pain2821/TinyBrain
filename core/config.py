@@ -22,6 +22,10 @@ FEATURE_DIM = 1280
 BATCH_SIZE = 32
 NUM_WORKERS = 4
 IMG_SIZE = 224
+SEED = 42
+USE_AMP = True
+LABEL_SMOOTHING = 0.05
+GRAD_CLIP_NORM = 1.0
 
 # Continual learning
 EPOCHS_PER_TASK = 8
@@ -30,7 +34,7 @@ WEIGHT_DECAY = 1e-4
 
 # Consolidation
 QUANTIZE_PATHWAYS = True
-THRESHOLD_PERCENTILE = 0.70  # Keep for backbone
+THRESHOLD_PERCENTILE = 0.60  # Less aggressive ternary pruning for better pathway accuracy
 SKIP_CLASSIFIER_QUANTIZATION = True  # NEW: Don't quantize classifier
 CLASSIFIER_THRESHOLD = 0.50  # If quantizing classifier, use softer threshold
 
@@ -56,6 +60,11 @@ PRINT_EVERY = 20  # Print every N batches
 # Routing strategy
 USE_ENTROPY_ROUTING = True  # Adaptive weighting based on confidence
 ENTROPY_ADJUSTMENT_SCALE = 0.15  # How much entropy affects weights
+ENABLE_TOPK_ROUTING = True
+TOPK_PATHWAYS = 2
+ROUTER_SOFTMAX_TEMPERATURE = 1.5
+ROUTER_ENTROPY_REG = 0.02
+ROUTER_BALANCE_REG = 0.05
 
 # Base weights by pathway count
 WEIGHTS_SINGLE_PATHWAY = {'fast': 0.7, 'pathway': 0.3}

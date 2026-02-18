@@ -133,18 +133,22 @@ def quantize_to_ternary(
             # Normal threshold for backbone
             threshold = torch.quantile(torch.abs(w.flatten()), threshold_percentile)
         
-        # Create ternary weights
+        # Create scaled ternary weights to preserve layer magnitude.
         ternary = torch.zeros_like(w)
-        ternary[w > threshold] = 1.0
-        ternary[w < -threshold] = -1.0
+        positive_mask = w > threshold
+        negative_mask = w < -threshold
+        non_zero_mask = positive_mask | negative_mask
+        alpha = w[non_zero_mask].abs().mean().item() if non_zero_mask.any() else 1.0
+        ternary[positive_mask] = alpha
+        ternary[negative_mask] = -alpha
         
         # Update parameter
         param.data = ternary
         
         # Statistics
-        non_zero = (ternary != 0).sum().item()
-        positive = (ternary == 1).sum().item()
-        negative = (ternary == -1).sum().item()
+        non_zero = int(non_zero_mask.sum().item())
+        positive = int(positive_mask.sum().item())
+        negative = int(negative_mask.sum().item())
         sparsity = 1.0 - (non_zero / w.numel())
         
         stats['non_zero_params'] += non_zero
@@ -155,7 +159,8 @@ def quantize_to_ternary(
             'sparsity': sparsity,
             'positive_ratio': positive / w.numel(),
             'negative_ratio': negative / w.numel(),
-            'params': w.numel()
+            'params': w.numel(),
+            'alpha': alpha
         }
         
         print(f"    {name:40s}: {sparsity*100:5.1f}% sparse, "

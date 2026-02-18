@@ -7,12 +7,14 @@ from pathlib import Path
 from core.bitbrain import BitBrain
 from core.config import *
 from training.train_task import train_task
+from test import test_on_task, measure_forgetting
 
 
 def continual_learning(
     bitbrain: BitBrain,
     task_configs: List[Dict],
-    device: str = DEVICE
+    device: str = DEVICE,
+    quantize_pathways: bool = QUANTIZE_PATHWAYS
 ):
     print("\n" + "="*70)
     print("BitBrain Continual Learning")
@@ -24,8 +26,11 @@ def continual_learning(
     results = {
         'tasks': [],
         'memory_history': [],
-        'routing_history': []
+        'routing_history': [],
+        'task_accuracies': {},
+        'evaluation_matrix': []
     }
+    task_order = [cfg['name'] for cfg in task_configs]
     
     for task_idx, task_config in enumerate(task_configs):
         task_name = task_config['name']
@@ -62,7 +67,7 @@ def continual_learning(
         bitbrain.consolidate_task(
             task_name,
             threshold_percentile=THRESHOLD_PERCENTILE,
-            quantize=QUANTIZE_PATHWAYS
+            quantize=quantize_pathways
         )
         
         # Memory breakdown after consolidation
@@ -79,6 +84,31 @@ def continual_learning(
         if len(bitbrain.pathways) > 0:
             routing_stats = bitbrain.analyze_routing(print_results=True)
             results['routing_history'].append(routing_stats)
+
+        # Evaluate on all seen tasks after each task to track forgetting.
+        seen_task_loaders = {
+            cfg['name']: cfg['val_loader']
+            for cfg in task_configs[:task_idx + 1]
+        }
+        phase_eval = {}
+        print("[EVALUATION AFTER TASK]")
+        for seen_task_name, seen_loader in seen_task_loaders.items():
+            eval_result = test_on_task(
+                bitbrain,
+                seen_loader,
+                seen_task_name,
+                device=device,
+                analyze_routing=False
+            )
+            acc = float(eval_result['accuracy'])
+            phase_eval[seen_task_name] = acc
+            results['task_accuracies'].setdefault(seen_task_name, [])
+            results['task_accuracies'][seen_task_name].append(acc)
+            print(f"  {seen_task_name:<20}: {acc:.4f}")
+        results['evaluation_matrix'].append({
+            'after_task': task_name,
+            'accuracies': phase_eval
+        })
         
         # Reset Fast Learner for next task (if not last task)
         if task_idx < len(task_configs) - 1:
@@ -102,6 +132,20 @@ def continual_learning(
     print("\nPer-task validation accuracy:")
     for task_result in results['tasks']:
         print(f"  {task_result['name']:<20}: {task_result['best_val_acc']:.4f}")
+
+    # Forgetting summary when multiple tasks are available.
+    forgetting_summary = None
+    if len(task_order) > 1:
+        aligned = {}
+        for idx, t_name in enumerate(task_order):
+            values = results['task_accuracies'].get(t_name, [])
+            aligned[t_name] = [float('nan')] * idx + values
+        try:
+            forgetting_summary = measure_forgetting(aligned, task_order)
+            print(f"\nAverage forgetting: {forgetting_summary['avg_forgetting']:.4f}")
+            print(f"Average retention:  {forgetting_summary['avg_retention_rate']:.4f}")
+        except Exception as exc:
+            print(f"\n[WARNING] Could not compute forgetting summary: {exc}")
     print("="*70 + "\n")
     
     # Save results
@@ -120,8 +164,12 @@ def continual_learning(
             'memory_history': [
                 {k: v for k, v in m.items() if k != 'pathways'}
                 for m in results['memory_history']
-            ]
+            ],
+            'task_accuracies': results['task_accuracies'],
+            'evaluation_matrix': results['evaluation_matrix']
         }
+        if forgetting_summary is not None:
+            save_results['forgetting_summary'] = forgetting_summary
         json.dump(save_results, f, indent=2)
     
     print(f"Results saved to: {results_path}\n")

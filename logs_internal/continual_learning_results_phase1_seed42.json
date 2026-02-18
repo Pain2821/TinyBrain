@@ -1,0 +1,130 @@
+{
+  "tasks": [
+    {
+      "name": "animals_task",
+      "task_idx": 0,
+      "best_val_acc": 0.9916666666666667
+    },
+    {
+      "name": "fruits_task_a",
+      "task_idx": 1,
+      "best_val_acc": 0.506578947368421
+    },
+    {
+      "name": "fruits_task_b3",
+      "task_idx": 2,
+      "best_val_acc": 0.9666666666666667
+    },
+    {
+      "name": "fruits_task_c3",
+      "task_idx": 3,
+      "best_val_acc": 0.9833333333333333
+    }
+  ],
+  "memory_history": [
+    {
+      "fast_learner_mb": 8.498058319091797,
+      "pathways_mb": 0.5311286449432373,
+      "router_mb": 3.5058631896972656,
+      "total_mb": 12.5350501537323,
+      "num_pathways": 1
+    },
+    {
+      "fast_learner_mb": 8.498058319091797,
+      "pathways_mb": 1.0622572898864746,
+      "router_mb": 3.5078201293945312,
+      "total_mb": 13.068135738372803,
+      "num_pathways": 2
+    },
+    {
+      "fast_learner_mb": 8.498058319091797,
+      "pathways_mb": 1.593385934829712,
+      "router_mb": 3.509777069091797,
+      "total_mb": 13.601221323013306,
+      "num_pathways": 3
+    },
+    {
+      "fast_learner_mb": 8.498058319091797,
+      "pathways_mb": 2.124514579772949,
+      "router_mb": 3.5117340087890625,
+      "total_mb": 14.134306907653809,
+      "num_pathways": 4
+    }
+  ],
+  "task_accuracies": {
+    "animals_task": [
+      0.9916666666666667,
+      0.075,
+      0.575,
+      0.75
+    ],
+    "fruits_task_a": [
+      0.4144736842105263,
+      0.7346491228070176,
+      0.5614035087719298
+    ],
+    "fruits_task_b3": [
+      0.95,
+      0.325
+    ],
+    "fruits_task_c3": [
+      0.975
+    ]
+  },
+  "evaluation_matrix": [
+    {
+      "after_task": "animals_task",
+      "accuracies": {
+        "animals_task": 0.9916666666666667
+      }
+    },
+    {
+      "after_task": "fruits_task_a",
+      "accuracies": {
+        "animals_task": 0.075,
+        "fruits_task_a": 0.4144736842105263
+      }
+    },
+    {
+      "after_task": "fruits_task_b3",
+      "accuracies": {
+        "animals_task": 0.575,
+        "fruits_task_a": 0.7346491228070176,
+        "fruits_task_b3": 0.95
+      }
+    },
+    {
+      "after_task": "fruits_task_c3",
+      "accuracies": {
+        "animals_task": 0.75,
+        "fruits_task_a": 0.5614035087719298,
+        "fruits_task_b3": 0.325,
+        "fruits_task_c3": 0.975
+      }
+    }
+  ],
+  "forgetting_summary": {
+    "per_task": {
+      "animals_task": {
+        "initial_acc": 0.9916666666666667,
+        "final_acc": 0.75,
+        "forgetting": 0.2416666666666667,
+        "retention_rate": 0.7563025210084033
+      },
+      "fruits_task_a": {
+        "initial_acc": 0.4144736842105263,
+        "final_acc": 0.5614035087719298,
+        "forgetting": -0.14692982456140347,
+        "retention_rate": 1.3544973544973544
+      },
+      "fruits_task_b3": {
+        "initial_acc": 0.95,
+        "final_acc": 0.325,
+        "forgetting": 0.625,
+        "retention_rate": 0.34210526315789475
+      }
+    },
+    "avg_forgetting": 0.2399122807017544,
+    "avg_retention_rate": 0.8176350462212175
+  }
+}

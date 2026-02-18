@@ -1,0 +1,26 @@
+[
+  {
+    "name": "animals_task",
+    "data_dir": "datasets/animals_task",
+    "num_classes": 3,
+    "epochs": 6
+  },
+  {
+    "name": "fruits_task_a",
+    "data_dir": "datasets/fruits_task_a",
+    "num_classes": 3,
+    "epochs": 6
+  },
+  {
+    "name": "fruits_task_b3",
+    "data_dir": "datasets/fruits_task_b3",
+    "num_classes": 3,
+    "epochs": 6
+  },
+  {
+    "name": "fruits_task_c3",
+    "data_dir": "datasets/fruits_task_c3",
+    "num_classes": 3,
+    "epochs": 6
+  }
+]
