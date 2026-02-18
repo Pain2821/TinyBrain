@@ -1,6 +1,6 @@
 /data
-/data_backup
-/datasets
+/data_backup/
+/datasets/
 /venv
 /__pycache__
 \__pycache__
@@ -99,3 +99,5 @@ yarn-error.log*
 # Uncomment if you don't want to track migrations
 # ===============================
 # alembic/versions/*
+core/__pycache__/
+training/__pycache__

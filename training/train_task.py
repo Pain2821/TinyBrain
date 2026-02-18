@@ -1,8 +1,10 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.utils.data import DataLoader
 import time
 from contextlib import nullcontext
+from typing import Dict, Optional
 
 from core.bitbrain import BitBrain
 from core.config import *
@@ -13,6 +15,7 @@ def train_task(
     train_loader: DataLoader,
     val_loader: DataLoader,
     task_name: str,
+    replay_loaders: Optional[Dict[int, DataLoader]] = None,
     epochs: int = EPOCHS_PER_TASK,
     lr: float = LEARNING_RATE,
     device: str = DEVICE,
@@ -60,6 +63,9 @@ def train_task(
     
     for epoch in range(epochs):
         epoch_start = time.time()
+        replay_iters = {}
+        if replay_loaders:
+            replay_iters = {idx: iter(loader) for idx, loader in replay_loaders.items()}
         
         # ============ TRAINING ============
         bitbrain.train()
@@ -99,8 +105,37 @@ def train_task(
                             ROUTER_ENTROPY_REG * entropy_penalty +
                             ROUTER_BALANCE_REG * balance_penalty
                         )
+                replay_loss = torch.tensor(0.0, device=device)
+                if (
+                    ENABLE_ROUTER_REPLAY and
+                    replay_loaders and
+                    len(bitbrain.pathways) > 0
+                ):
+                    losses = []
+                    for pathway_idx, replay_loader in replay_loaders.items():
+                        replay_iter = replay_iters[pathway_idx]
+                        try:
+                            rx, _ = next(replay_iter)
+                        except StopIteration:
+                            replay_iter = iter(replay_loader)
+                            replay_iters[pathway_idx] = replay_iter
+                            rx, _ = next(replay_iter)
 
-                loss = ce_loss + reg_loss
+                        rx = rx.to(device)
+                        replay_features = bitbrain.extract_features(rx).detach()
+                        replay_gates = bitbrain.router(replay_features)
+                        replay_target = torch.full(
+                            (replay_gates.size(0),),
+                            int(pathway_idx),
+                            device=device,
+                            dtype=torch.long
+                        )
+                        losses.append(F.nll_loss(torch.log(replay_gates + 1e-8), replay_target))
+
+                    if losses:
+                        replay_loss = torch.stack(losses).mean() * ROUTER_REPLAY_WEIGHT
+
+                loss = ce_loss + reg_loss + replay_loss
             
             # Backward
             optimizer.zero_grad()

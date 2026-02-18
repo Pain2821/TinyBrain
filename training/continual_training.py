@@ -42,6 +42,18 @@ def continual_learning(
         print(f"\n{'#'*70}")
         print(f"# Task {task_idx + 1}/{len(task_configs)}: {task_name}")
         print(f"{'#'*70}\n")
+
+        replay_loaders = {}
+        if ENABLE_ROUTER_REPLAY and task_idx > 0:
+            for replay_idx in range(task_idx):
+                replay_dataset = task_configs[replay_idx]['train_loader'].dataset
+                replay_loaders[replay_idx] = DataLoader(
+                    replay_dataset,
+                    batch_size=REPLAY_SAMPLES_PER_TASK,
+                    shuffle=True,
+                    num_workers=NUM_WORKERS,
+                    pin_memory=True if device == 'cuda' else False
+                )
         
         # Train on this task
         best_acc, history = train_task(
@@ -49,6 +61,7 @@ def continual_learning(
             train_loader,
             val_loader,
             task_name,
+            replay_loaders=replay_loaders if replay_loaders else None,
             epochs=epochs,
             device=device
         )
