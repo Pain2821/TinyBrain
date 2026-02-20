@@ -1,0 +1,169 @@
+{
+  "config": {
+    "device": "cpu",
+    "seed": 42,
+    "backbone": "mobilenet_v2",
+    "pretrained": true,
+    "stage_indices": [
+      3,
+      6,
+      13,
+      18
+    ],
+    "img_size": 224,
+    "lr": 0.0001,
+    "weight_decay": 0.0001,
+    "epochs_per_task": 1,
+    "batch_size": 32,
+    "num_workers": 4,
+    "log_every": 20,
+    "tau_reuse": 0.85,
+    "tau_route": 0.6,
+    "gamma_high": 0.85,
+    "gamma_low": 0.6,
+    "delta_conf": 0.15,
+    "use_confidence_logic": true,
+    "max_clusters": 5,
+    "min_samples_for_cluster": 8,
+    "max_samples_per_class": 200,
+    "quantize": true,
+    "task_aware_routing": true,
+    "eval_time_batches": 5
+  },
+  "tasks": [
+    {
+      "name": "animals_task",
+      "data_dir": "datasets/animals_task",
+      "num_classes": 3
+    },
+    {
+      "name": "fruits_task_a",
+      "data_dir": "datasets/fruits_task_a",
+      "num_classes": 3
+    }
+  ],
+  "phase_logs": [
+    {
+      "task": "animals_task",
+      "best_val_accuracy": 0.95,
+      "pre_train_accuracy": 0.35833333333333334,
+      "consolidation": {
+        "pathway_ids": [
+          0,
+          1,
+          2
+        ],
+        "nodes_created": 22,
+        "nodes_reused": 4
+      },
+      "routing": {
+        "animals_task": {
+          "routing_accuracy": 0.0,
+          "pathway_selection_accuracy": 0.0,
+          "pathway_selection_rate": 0.0,
+          "route_rate": 0.0
+        }
+      },
+      "memory": {
+        "num_nodes": 22,
+        "num_pathways": 3,
+        "memory_bank_bytes": 24368
+      }
+    },
+    {
+      "task": "fruits_task_a",
+      "best_val_accuracy": 0.41228070175438597,
+      "pre_train_accuracy": 0.1074561403508772,
+      "consolidation": {
+        "pathway_ids": [
+          3,
+          4,
+          5
+        ],
+        "nodes_created": 20,
+        "nodes_reused": 6
+      },
+      "routing": {
+        "animals_task": {
+          "routing_accuracy": 0.0,
+          "pathway_selection_accuracy": 0.0,
+          "pathway_selection_rate": 0.0,
+          "route_rate": 0.0
+        },
+        "fruits_task_a": {
+          "routing_accuracy": 0.0,
+          "pathway_selection_accuracy": 0.0,
+          "pathway_selection_rate": 0.015350877192982455,
+          "route_rate": 0.006578947368421052
+        }
+      },
+      "memory": {
+        "num_nodes": 42,
+        "num_pathways": 6,
+        "memory_bank_bytes": 48088
+      }
+    }
+  ],
+  "evaluation_matrix": [
+    {
+      "after_task": "animals_task",
+      "accuracies": {
+        "animals_task": 0.95
+      }
+    },
+    {
+      "after_task": "fruits_task_a",
+      "accuracies": {
+        "animals_task": 0.7333333333333333,
+        "fruits_task_a": 0.4057017543859649
+      }
+    }
+  ],
+  "task_accuracy_history": {
+    "animals_task": [
+      0.95,
+      0.7333333333333333
+    ],
+    "fruits_task_a": [
+      0.4057017543859649
+    ]
+  },
+  "metrics": {
+    "average_accuracy": 0.5695175438596491,
+    "forgetting_per_task": {
+      "animals_task": 0.21666666666666667,
+      "fruits_task_a": 0.0
+    },
+    "average_forgetting": 0.10833333333333334,
+    "forward_transfer": -0.22587719298245612,
+    "routing_accuracy": 0.0,
+    "pathway_selection_accuracy": 0.0,
+    "average_pathway_selection_rate": 0.005116959064327485,
+    "average_route_rate": 0.0021929824561403508,
+    "memory_overhead": {
+      "memory_overhead_ratio": 0.005396561050224109,
+      "memory_overhead_bytes": 48088
+    },
+    "inference_time_ratio": 1.0242397257961091,
+    "timing_seconds": {
+      "baseline_fast": 7.8013465000003634,
+      "routed": 7.990449000000808
+    }
+  },
+  "final_state": {
+    "num_nodes": 42,
+    "num_pathways": 6,
+    "task_pathways": {
+      "animals_task": [
+        0,
+        1,
+        2
+      ],
+      "fruits_task_a": [
+        3,
+        4,
+        5
+      ]
+    }
+  }
+}
